@@ -43,7 +43,7 @@ PHP="$(which php)"
 ############################################################
 
 print_usage() {
-	printf "Usage: %s [-s <w|e>] [-u <w|e>] [-m <module> <w|e>] [-b <module> <w|e> [-c <conf> <val> <w|e>] [ -p <path> ] [ -d <delimiter> ] [-v]\n" "${INFO_NAME}"
+	printf "Usage: %s [-s <w|e>] [-u <w|e>] [-m <module> <w|e>] [-b <module> <w|e> [-c <conf> <val> <w|e>] [ -p <path> ] [ -i <path> ] [ -d <delimiter> ] [-v]\n" "${INFO_NAME}"
 	printf "       %s -h\n" "${INFO_NAME}"
 	printf "       %s -V\n\n" "${INFO_NAME}"
 	printf "Nagios plugin that will check if PHP exists, for PHP startup errors,\n"
@@ -69,6 +69,8 @@ print_usage() {
 	printf "                         Example: -c \"date.timezone\" w -c \"Europe/Berlin\" e\n\n"
 	printf "  -p <path>              [optional] Define the path to the PHP binary that shall be used.\n"
 	printf "                         If no value is given, the current user's default PHP version will be checked.\n\n"
+	printf "  -i <path>              [optional] Define the path to additional PHP ini files that shall be used.\n"
+	printf "                         If no value is given, the current user's default PHP ini files will be used.\n\n"
 	printf "  -d <delimiter>         [optional] Delimiter used to concatenate arguments of the above options\n"
 	printf "                         that require multiple values.\n"
 	printf "                         Example: -d \"|\" -m \"mysqli|w\" -b \"mcrypt|w\" -c \"date.timezone|Europe/Berlin|e\"\n\n"
@@ -213,7 +215,12 @@ check_configurration() {
 	CONFIG="$1"
 	VALUE="$2"
 
-	CMD="$PHP -i 2>/dev/null | grep '^${CONFIG}\s' | awk 'BEGIN { FS = \"=>\" } ; {print \$NF}' | xargs"
+	if [ $INI ]; then
+		CMD="$PHP -c $INI -i 2>/dev/null | grep '^${CONFIG}\s' | awk 'BEGIN { FS = \"=>\" } ; {print \$NF}' | xargs"
+	else
+		CMD="$PHP -i 2>/dev/null | grep '^${CONFIG}\s' | awk 'BEGIN { FS = \"=>\" } ; {print \$NF}' | xargs"
+	fi
+
 	CURRENT="$(eval "$CMD")"
 
 	if [ "$VALUE" = "$CURRENT" ]; then
@@ -281,6 +288,31 @@ fetch_php() {
 	done
 }
 
+# Fetch ini file
+# ---------
+# Checks the given arguments for a '-i' option and sets the ini file
+# variable accordingly.
+fetch_ini() {
+	while test -n "$1"; do
+		case "$1" in
+			# PHP ini file option.
+			-i)
+				shift
+				INI="$1"
+
+				# Whether the given PHP binary doesn't exist.
+				if [ ! -x "$INI" ]; then
+					echo "ini file not found at \"$INI\" for option \"-i\"."
+					exit $EXIT_UNKNOWN
+				fi
+
+				break
+				;;
+		esac
+		shift
+	done
+}
+
 # Get delimiter
 # -------------
 # Checks the given arguments for a '-d' option and sets the DELIMITER
@@ -323,6 +355,9 @@ fi
 
 # Check for PHP binary option
 fetch_php "$@"
+
+# Check for PHP ini file option
+fetch_ini "$@"
 
 # Check for delimiter
 DELIMITER=""
@@ -587,6 +622,13 @@ while test -n "$1"; do
 		# ---- PHP binary
 		-p)
 			# The binary option is checked earlier. So just shift
+			# the path and move on.
+			shift
+			;;
+
+		# ---- PHP ini file
+		-i)
+			# The ini file option is checked earlier. So just shift
 			# the path and move on.
 			shift
 			;;
